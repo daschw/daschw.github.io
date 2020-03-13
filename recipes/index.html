@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+   <link rel="stylesheet" href="/libs/katex/katex.min.css">
+     
+   <link rel="stylesheet" href="/libs/highlight/github.min.css">
+   
+  <link rel="stylesheet" href="/css/franklin.css">
+  <link rel="stylesheet" href="/css/poole_hyde.css">
+  <!-- style adjustments -->
+  <style>
+    html {font-size: 17px;}
+    .franklin-content {position: relative; padding-left: 8%; padding-right: 5%; line-height: 1.35em;}
+    @media (min-width: 940px) {
+      .franklin-content {width: 100%; margin-left: auto; margin-right: auto;}
+    }
+    @media (max-width: 768px) {
+      .franklin-content {padding-left: 6%; padding-right: 6%;}
+    }
+  </style>
+  <link rel="icon" href="/assets/me_32.png">
+   <title>How do Recipes actually work?</title>  
+</head>
+<body>
+<div class="sidebar">
+  <div class="container sidebar-sticky">
+    <div class="sidebar-about">
+      <div class="center">
+        <img src="/assets/me_128.png">
+        <h2><a href="/">daschw</a></h2>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <a class="sidebar-nav-item " href="/">Home</a>
+      <a class="sidebar-nav-item active" href="/recipes/">How do Recipes actually work?</a>
+    </nav>
+    <p>&copy; Daniel Schwabeneder.</p>
+  </div>
+</div>
+<div class="content container">
+<!-- Content appended here -->
+
+<div class="franklin-content">
+
+<h1 id="how_do_recipes_actually_work"><a href="#how_do_recipes_actually_work">How do Recipes actually work?</a></h1>
+<p>Unfortunately we had to <a href="https://discourse.julialang.org/t/invitation-to-vizcon-2-12-16-march-2020/33806/35">cancel VizCon 2</a>. So I decided to turn the slides I prepared on the recipe system of <a href="https://github.com/JuliaPlots/Plots.jl">Plots.jl</a> into a blog post.</p>
+<div class="franklin-toc"><ol><li><a href="#how_do_recipes_actually_work">How do Recipes actually work?</a><ol><li><a href="#the_plots_ecosystem">The Plots Ecosystem</a><ol><li><a href="#dependencies">Dependencies</a><ol><li><a href="#plotutils">PlotUtils</a></li><li><a href="#recipesbase">RecipesBase</a></li><li><a href="#plotthemes">PlotThemes</a></li></ol></li><li><a href="#plots">Plots</a></li><li><a href="#extensions">Extensions</a><ol><li><a href="#statsplots">StatsPlots</a></li><li><a href="#graphrecipes">GraphRecipes</a></li></ol></li><li><a href="#infrastructure">Infrastructure</a><ol><li><a href="#plotreferenceimages">PlotReferenceImages</a></li><li><a href="#visualregressiontests">VisualRegressionTests</a></li><li><a href="#plotdocs">PlotDocs</a></li></ol></li></ol></li><li><a href="#what_are_recipes">What are Recipes?</a><ol><li><a href="#recipes_syntax">Recipes Syntax</a></li><li><a href="#recipe_types">Recipe Types</a><ol><li><a href="#user_recipes">User Recipes</a></li><li><a href="#type_recipes">Type Recipes</a></li><li><a href="#plot_recipes">Plot Recipes</a></li><li><a href="#series_recipes">Series Recipes</a></li></ol></li><li><a href="#examples">Examples</a><ol><li><a href="#user_recipes__2">User Recipes</a></li><li><a href="#type_recipes__2">Type Recipes</a></li><li><a href="#plot_recipes__2">Plot Recipes</a></li><li><a href="#series_recipes__2">Series Recipes</a></li><li><a href="#remarks">Remarks</a></li></ol></li></ol></li><li><a href="#internals">Internals</a><ol><li><a href="#recipesbase__2">RecipesBase</a></li><li><a href="#plots__2">Plots</a><ol><li><a href="#preprocess_plotattributes">Preprocess <code>plotattributes</code></a></li><li><a href="#process_user_recipes">Process User Recipes</a></li><li><a href="#process_type_recipes">Process Type Recipes</a></li><li><a href="#process_plot_recipes">Process Plot Recipes</a></li><li><a href="#process_series_recipes">Process Series Recipes</a></li></ol></li></ol></li><li><a href="#concluding_remarks">Concluding Remarks</a></li><li><a href="#acknowledgements">Acknowledgements</a></li></ol></li></ol></div>
+<p>Plots.jl is a plotting meta-package that provides a common interface to different Packages like <a href="https://github.com/jheinen/GR.jl">GR.jl</a>, <a href="https://plot.ly/">Plotly</a>, <a href="https://github.com/JuliaPy/PyPlot.jl">PyPlot.jl</a> or <a href="https://github.com/KristofferC/PGFPlotsX.jl">PGFPlotsX.jl</a>. But it&#39;s not just this. The recipe system of Plots and its processing pipeline allows users and package developers to define plotting routines for costum types without directly depending on Plots through the minimalst <a href="https://github.com/JuliaPlots/RecipesBase.jl">RecipesBase.jl</a> and have them compose with types from other packages without knowning about each other. To get a better understanding of the underlying mechanism let&#39;s start with a quick overview of the Plots ecosystem.</p>
+<h2 id="the_plots_ecosystem"><a href="#the_plots_ecosystem">The Plots Ecosystem</a></h2>
+<h3 id="dependencies"><a href="#dependencies">Dependencies</a></h3>
+<h4 id="plotutils"><a href="#plotutils">PlotUtils</a></h4>
+<p><a href="https://github.com/JuliaPlots/PlotUtils.jl">PlotUtils.jl</a> defines generic utils that could be used for other packages as well. It provides tools for:     - Colors     - Color gradients     - Tick computation</p>
+<h4 id="recipesbase"><a href="#recipesbase">RecipesBase</a></h4>
+<p><a href="https://github.com/JuliaPlots/Recipes.jl">RecipesBase.jl</a> is a lightweight Package without dependencies that allows to define custom plotting recipes with the <code>@recipe</code> macro. We will dive into more detail below.</p>
+<h4 id="plotthemes"><a href="#plotthemes">PlotThemes</a></h4>
+<p><a href="https://github.com/JuliaPlots/PlotThemes.jl">PlotThemes.jl</a> provides different visual themes, defined as default attributes. For the plots in this post I chose <code>theme&#40;:bright&#41;</code>.</p>
+<h3 id="plots"><a href="#plots">Plots</a></h3>
+<p><a href="https://github.com/JuliaPlots/Plots.jl">Plots.jl</a> is at the core of the ecosystem. It defines the plotting functions <code>plot</code> and <code>plot&#33;</code>, the argument processing pipeline and basic types like <code>Plot</code>, <code>Subplot</code>, <code>Axis</code> and <code>Series</code>. Furthermore, the code interfacing with the Plots backends lives here. GR and Plotly are installed by default and other backends are loaded conditionally using <a href="https://github.com/JuliaPackaging/Requires.jl">Requires.jl</a>.</p>
+<h3 id="extensions"><a href="#extensions">Extensions</a></h3>
+<h4 id="statsplots"><a href="#statsplots">StatsPlots</a></h4>
+<p><a href="https://github.com/JuliaPlots/StatsPlots.jl">StatsPlots.jl</a> implements recipes for statistical plotting, like <code>groupedbar</code>, <code>boxplot</code>, <code>violin</code>, <code>marginalhist</code>, <code>corrplot</code>, etc. In addition it defines the handy <code>@df</code> macro providing <a href="https://github.com/JuliaData/Tables.jl">Tables.jl</a> support for plotting. However, it&#39;s currently being discussed if <code>@df</code> should be moved to Plots.</p>
+<h4 id="graphrecipes"><a href="#graphrecipes">GraphRecipes</a></h4>
+<p><a href="https://github.com/JuliaPlots/GraphRecipes.jl">GraphRecipes.jl</a> &#40;formerly known as PlotRecipes&#41; provides recipes for plotting graphs like the <code>graphplot</code> user recipe.</p>
+<h3 id="infrastructure"><a href="#infrastructure">Infrastructure</a></h3>
+<h4 id="plotreferenceimages"><a href="#plotreferenceimages">PlotReferenceImages</a></h4>
+<p><a href="https://github.com/JuliaPlots/PlotReferenceImages.jl">PlotReferenceImages.jl</a> stores images that are used in the Plots test suite for visual comparison tests.</p>
+<h4 id="visualregressiontests"><a href="#visualregressiontests">VisualRegressionTests</a></h4>
+<p><a href="https://github.com/JuliaPlots/VisualRegressionTests.jl">VisualRegressionTests.jl</a> implements utils for comparing plots generated by Plots with reference images.</p>
+<h4 id="plotdocs"><a href="#plotdocs">PlotDocs</a></h4>
+<p>The source code for the Plots documentation lives in <a href="https://github.com/JuliaPlots/PlotDocs.jl">PlotDocs.jl</a>.</p>
+<h2 id="what_are_recipes"><a href="#what_are_recipes">What are Recipes?</a></h2>
+<p>Recipes are a way of defining visualizations without depending on Plots. The functionality relies on RecipesBase. This is a super lightweight package with zero dependencies and about 400 lines of code. It exports the <code>@recipe</code> macro which provides a nice syntax for defining plot recipes. Under the hood <code>@recipe</code> defines a new method for <code>RecipesBase.apply_recipe</code> which is called recursively in Plots at different stages of the argument processing pipeline. This way other packages can communicate with Plots, i.e. define custom plotting recipes, only depending on RecipesBase. Furthermore, the convenience macros <code>@series</code>, <code>@userplot</code> and <code>@shorthands</code> are exported by RecipesBase. I will explain their usage later.</p>
+<h3 id="recipes_syntax"><a href="#recipes_syntax">Recipes Syntax</a></h3>
+<p>The syntax in the <code>@recipe</code> macro is best explained using an example. Suppose, we have a custom type storing the results of a simulation <code>x</code> and <code>y</code> and a measure <code>ε</code> for the maximum error in <code>y</code>.</p>
+<pre><code class="language-julia">struct Result
+    x::Vector{Float64}
+    y::Vector{Float64}
+    ε::Vector{Float64}
+end</code></pre>
+<p>If we want to plot the <code>x</code> and <code>y</code> values of such a result with an error band given by <code>ε</code>, we could run something like <pre><code class="language-julia">res = Result(1:10, cumsum(rand(10)), cumsum(rand(10)) / 5)
+
+using Plots
+
+# plot the error band as invisible line with fillrange
+plot(
+    res.x,
+    res.y .+ res.ε,
+    xlabel = "x",
+    ylabel = "y",
+    fill = (res.y .- res.ε, :lightgray, 0.5),
+    linecolor = nothing,
+    primary = false, # no legend entry
+)
+
+# add the data to the plots
+plot!(res.x, res.y, marker = :diamond)</code></pre> <img src="/assets/recipes/code/output/plotresult.svg" alt="">
+<p>Instead of typing this plot command over and over for different results we can define a <strong>user recipe</strong> to tell Plots what to do with input of the type <code>Result</code>. Here is an example for such a user recipe with the additional feature to highlight datapoints with a maximal error above a certain threshold <code>ε_max</code>.</p>
+<pre><code class="language-julia">@recipe function f(r::Result; ε_max = 0.5)
+    # set a default value for an attribute with `-->`
+    xlabel --> "x"
+    ylabel --> "y"
+    markershape --> :diamond
+    # add a series for an error band
+    @series begin
+        # force an argument with `:=`
+        seriestype := :path
+        # ignore series in legend and color cycling
+        primary := false
+        linecolor := nothing
+        fillcolor := :lightgray
+        fillalpha := 0.5
+        fillrange := r.y .- r.ε
+        # ensure no markers are shown for the error band
+        markershape := :none
+        # return series data
+        r.x, r.y .+ r.ε
+    end
+    # get the seriescolor passed by the user
+    c = get(plotattributes, :seriescolor, :auto)
+    # highlight big errors, otherwise use the user-defined color
+    markercolor := ifelse.(r.ε .> ε_max, :red, c)
+    # return data
+    r.x, r.y
+end</code></pre>
+<p>Let&#39;s walk through this recipe step by step. First, the function signature in the recipe definition determines the recipe type - in this case a user recipe. We will learn more about different recipe types soon. The function name <code>f</code> in is irrelevant and can be replaced by any other function name. <code>@recipe</code> does not use it. In the recipe body we can set default values for <a href="http://docs.juliaplots.org/latest/attributes/">Plots attributes</a>. <pre><code class="language-julia">attr --> val</code></pre> This will set <code>attr</code> to <code>val</code> unless it is specified otherwise by the user in the plot command. <pre><code class="language-julia">plot(args...; kw..., attr = otherval)</code></pre> Similarly we can force an attribute value with <code>:&#61;</code>. <pre><code class="language-julia">attr := val</code></pre> This overwrites whatever the user passed to <code>plot</code> for <code>attr</code> and sets it to <code>val</code>.</p>
+<p>We use the <code>@series</code> macro to add a new series for the error band to the plot. Within an <code>@series</code> block we can use the same syntax as above to force or set default values for attributes.</p>
+<p>In <code>@recipe</code> we have access to <code>plotattributes</code>. This is a <code>Dict</code> storing the attributes that have been already processed at the current stage in the Plots pipeline. For user recipes, which are called early in the pipeline, this mostly contains the keyword arguments provided by the user in the <code>plot</code> command. In our example we want to highlight data points with an error above a certain threshold by changing the marker color. For all other data points we set the marker color to whatever is the default or has been provided as keyword argument.</p>
+<p>Finally, in both, <code>@recipe</code>s and <code>@series</code> blocks we return the data we wish to pass on to Plots &#40;or the next recipe&#41;.</p>
+<p>With the recipe above we can now plot <code>Result</code>s with just</p>
+<pre><code class="language-julia">plot(res)</code></pre> <img src="/assets/recipes/code/output/syntax2.svg" alt="">
+<p>or</p>
+<pre><code class="language-julia">scatter(res, ε_max = 0.7, color = :green, marker = :star)</code></pre> <img src="/assets/recipes/code/output/syntax3.svg" alt="">
+<h3 id="recipe_types"><a href="#recipe_types">Recipe Types</a></h3>
+<p>There are four main types of recipes which are determined by the signature.</p>
+<h4 id="user_recipes"><a href="#user_recipes">User Recipes</a></h4>  User recipes are called early in the processing pipeline and allow designing custom visualizations. <pre><code class="language-julia">@recipe function f(custom_arg_1::T, custom_arg_2::S, ...; ...)</code></pre> <h4 id="type_recipes"><a href="#type_recipes">Type Recipes</a></h4>  Type recipes define one-to-one mappings from custom types to something Plots supports <pre><code class="language-julia">@recipe function f(::Type{T}, val::T) where T</code></pre> <h4 id="plot_recipes"><a href="#plot_recipes">Plot Recipes</a></h4>  Plot recipes are called after all input data is processed by type recipes but before the plot and subplots are set-up. They allow to build series with custom layouts and set plot-wide attributes. <pre><code class="language-julia">@recipe function f(::Type{Val{:myplotrecipename}}, plt::AbstractPlot; ...)</code></pre> <h4 id="series_recipes"><a href="#series_recipes">Series Recipes</a></h4>  Series recipes are applied recursively until the current backend supports a series type. They are used for example to convert the input data of a bar plot to the coordinates of the shapes that define the bars. <pre><code class="language-julia">@recipe function f(::Type{Val{:myseriesrecipename}}, x, y, z; ...)</code></pre>
+<h3 id="examples"><a href="#examples">Examples</a></h3>
+<p>Let&#39;s look at some examples to get a better idea of the difference between these recipe types in practice.</p>
+<h4 id="user_recipes__2"><a href="#user_recipes__2">User Recipes</a></h4>
+<p>We have already seen an example for a user recipe in the syntax section above. User recipes can also be used to define a custom visualization without necessarily wishing to plot a custom type. For this purpose we can create a type to dispatch on. The <code>@userplot</code> macro is a convenient way to do this.</p>
+<pre><code class="language-julia">@userplot MyPlot</code></pre> expands to <pre><code class="language-julia">mutable struct MyPlot
+    args
+end
+export myplot, myplot!
+myplot(args...; kw...) = plot(MyPlot(args); kw...)
+myplot!(args...; kw...) = plot!(MyPlot(args); kw...)</code></pre> We can use this to define a user recipe for a pie plot. <pre><code class="language-julia"># defines mutable struct `UserPie` and sets shorthands `userpie` and `userpie!`
+@userplot UserPie
+@recipe function f(up::UserPie)
+    y = up.args[end] # extract y from the args
+    # if we are passed two args, we use the first as labels
+    labels = length(up.args) == 2 ? up.args[1] : eachindex(y)
+    framestyle --> :none
+    aspect_ratio --> true
+    s = sum(y)
+    θ = 0
+    # add a shape for each piece of pie
+    for i in 1:length(y)
+        # determine the angle until we stop
+        θ_new = θ + 2π * y[i] / s
+        # calculate the coordinates
+        coords = [(0.0, 0.0); Plots.partialcircle(θ, θ_new, 50)]
+        @series begin
+            seriestype := :shape
+            label --> string(labels[i])
+            coords
+        end
+        θ = θ_new
+    end
+    # we already added all shapes in @series so we don't want to return a series
+    # here. (Technically we are returning an empty series which is not added to
+    # the legend.)
+    primary := false
+    ()
+end</code></pre>
+<p>Now we can just use the recipe like this:</p>
+<pre><code class="language-julia">userpie('A':'D', rand(4))</code></pre> <img src="/assets/recipes/code/output/userpie2.svg" alt="">
+<h4 id="type_recipes__2"><a href="#type_recipes__2">Type Recipes</a></h4>
+<p>Suppose we have a custom wrapper for vectors.</p>
+<pre><code class="language-julia">struct MyWrapper
+    v::Vector
+end</code></pre>
+<p>We can tell Plots to just use the wrapped vector for plotting in a type recipe.</p>
+<pre><code class="language-julia">@recipe f(::Type{MyWrapper}, mw::MyWrapper) = mw.v</code></pre>
+<p>Now Plots knows what to do when it sees a <code>MyWrapper</code>.</p>
+<pre><code class="language-julia">mw = MyWrapper(cumsum(rand(10)))
+plot(mw)</code></pre> <img src="/assets/recipes/code/output/typevector2.svg" alt="">
+<p>Due to the recursive application of type recipes they even compose automatically.</p>
+<pre><code class="language-julia">struct MyOtherWrapper
+    w
+end
+
+@recipe f(::Type{MyOtherWrapper}, mow::MyOtherWrapper) = mow.w
+
+mow = MyOtherWrapper(mw)
+plot(mow)</code></pre> <img src="/assets/recipes/code/output/typevector3.svg" alt="">
+<p>If we want an element-wise conversion of custom types we can use a less-known version of the type recipe. It requires defining a conversion function to a type that Plots supports &#40;<code>AbstractFloat</code>, <code>Integer</code>&#41; and a formatter for the tick labels. Consider the following simple time type. <pre><code class="language-julia">struct MyTime
+    h::Int
+    m::Int
+end
+
+# show e.g. `MyTime(1, 30)` as "01:30"
+time_string(mt) = join((lpad(string(c), 2, "0") for c in (mt.h, mt.m)), ":")
+# map a `MyTime` object to the number of minutes that have passed since midnight.
+# this is the actual data Plots will use.
+minutes_since_midnight(mt) = 60 * mt.h + mt.m
+# convert the minutes passed since midnight to a nice string showing `MyTime`
+formatter(n) = time_string(MyTime(divrem(n, 60)...))
+
+# define the recipe (it must return two functions)
+@recipe f(::Type{MyTime}, mt::MyTime) = (minutes_since_midnight, formatter)</code></pre>
+<p>Now we can plot vectors of <code>MyTime</code> automatically with the correct tick labelling. <code>DateTime</code>s and <code>Char</code>s are implemented with such a type recipe in Plots for example.</p>
+<pre><code class="language-julia">times = MyTime.(0:23, rand(0:59, 24))
+vals = log.(1:24)
+
+plot(times, vals)</code></pre> <img src="/assets/recipes/code/output/typeelement2.svg" alt="">
+<p>Again everything composes nicely.</p>
+<pre><code class="language-julia">plot(MyWrapper(vals), MyOtherWrapper(times))</code></pre> <img src="/assets/recipes/code/output/typerecipe.svg" alt="">
+<h4 id="plot_recipes__2"><a href="#plot_recipes__2">Plot Recipes</a></h4>
+<p>Plot recipes define a new series type. They are applied after type recipes. Hence, standard Plots types can be assumed for input data <code>:x</code>, <code>:y</code> and <code>:z</code> in <code>plotattributes</code>. Plot recipes can access plot and subplot attributes before they are processed, for example to build layouts. Both, plot recipes and series recipes must change the series type. Otherwise we get a warning that we would run into a StackOverflow error.</p>
+<p>We can define a seriestype <code>:yscaleplot</code>, that automatically shows data with a linear y scale in one subplot and with a logarithmic yscale in another one.</p>
+<pre><code class="language-julia">@recipe function f(::Type{Val{:yscaleplot}}, plt::AbstractPlot)
+    x, y = plotattributes[:x], plotattributes[:y]
+    layout := (1, 2)
+    for (i, scale) in enumerate((:linear, :log))
+        @series begin
+            title --> string(scale, " scale")
+            seriestype := :path
+            subplot := i
+            yscale := scale
+        end
+    end
+end</code></pre>
+<p>We can call it with <code>plot&#40;...; ..., seriestype &#61; :yscaleplot&#41;</code> or we can define a shorthand with the <code>@shorthands</code> macro.</p>
+<pre><code class="language-julia">@shorthands myseries</code></pre>
+<p>expands to</p>
+<pre><code class="language-julia">export myseries, myseries!
+myseries(args...; kw...) = plot(args...; kw..., seriestype = :myseries)
+myseries!(args...; kw...) = plot!(args...; kw..., seriestype = :myseries)</code></pre>
+<p>So let&#39;s try the <code>yscaleplot</code> plot recipe.</p>
+<pre><code class="language-julia">@shorthands yscaleplot
+
+yscaleplot((1:10).^2)</code></pre> <img src="/assets/recipes/code/output/plotrecipes1.svg" alt="">
+<p>Magically the composition with type recipes works again.</p>
+<pre><code class="language-julia">yscaleplot(MyWrapper(times), MyOtherWrapper((1:24).^2))</code></pre> <img src="/assets/recipes/code/output/plotrecipes2.svg" alt="">
+<h4 id="series_recipes__2"><a href="#series_recipes__2">Series Recipes</a></h4>
+<p>If we want to call our <code>userpie</code> recipe with a custom type we run into errors.</p>
+<pre><code class="language-julia">userpie(MyWrapper(rand(4)))</code></pre> <pre><code class="language-julia">ERROR: MethodError: no method matching keys(::MyWrapper)
+Stacktrace:
+ [1] eachindex(::MyWrapper) at ./abstractarray.jl:209</code></pre> Furthermore, if we want to show multiple pie charts in different subplots, we don&#39;t get what we expect either</p>
+<pre><code class="language-julia">userpie(rand(4, 2), layout = 2)</code></pre> <img src="/assets/recipes/code/output/userpielayout.svg" alt="">
+<p>We could overcome these issues by implementing the required <code>AbstractArray</code> methods for <code>MyWrapper</code> &#40;instead of the type recipe&#41; and by more carefully dealing with different series in the <code>userpie</code> recipe. However, the simpler approach is writing the pie recipe as a series recipe and relying on Plots&#39; processing pipeline.</p>
+<pre><code class="language-julia">@recipe function f(::Type{Val{:seriespie}}, x, y, z)
+    framestyle --> :none
+    aspect_ratio --> true
+    s = sum(y)
+    θ = 0
+    for i in eachindex(y)
+        θ_new = θ + 2π * y[i] / s
+        coords = [(0.0, 0.0); Plots.partialcircle(θ, θ_new, 50)]
+        @series begin
+            seriestype := :shape
+            label --> string(x[i])
+            x := first.(coords)
+            y := last.(coords)
+        end
+        θ = θ_new
+    end
+end
+@shorthands seriespie</code></pre>
+<p>Here we use the already processed values <code>x</code> and <code>y</code> to calculate the shape coordinates for each pie piece, update <code>x</code> and <code>y</code> with these coordinates and set the series type to <code>:shape</code>.</p>
+<pre><code class="language-julia">seriespie(rand(4))</code></pre> <img src="/assets/recipes/code/output/seriespie2.svg" alt="">
+<pre><code class="language-julia">seriespie(MyWrapper(rand(4)))</code></pre> <img src="/assets/recipes/code/output/seriespie3.svg" alt="">
+<pre><code class="language-julia">seriespie(rand(4, 2), layout = 2)</code></pre> <img src="/assets/recipes/code/output/seriespie4.svg" alt="">
+<h4 id="remarks"><a href="#remarks">Remarks</a></h4>
+<p>Plot recipes and series recipes are actually very similar. In fact, a pie recipe could be also implemented as a plot recipe by acessing the data through <code>plotattributes</code>.</p>
+<pre><code class="language-julia">@recipe function f(::Type{Val{:plotpie}}, plt::AbstractPlot)
+    y = plotattributes[:y]
+    labels = plotattributes[:x]
+    framestyle --> :none
+    aspect_ratio --> true
+    s = sum(y)
+    θ = 0
+    for i in 1:length(y)
+        θ_new = θ + 2π * y[i] / s
+        coords = [(0.0, 0.0); Plots.partialcircle(θ, θ_new, 50)]
+        @series begin
+            seriestype := :shape
+            label --> string(labels[i])
+            x := first.(coords)
+            y := last.(coords)
+        end
+        θ = θ_new
+    end
+end
+@shorthands plotpie
+
+plotpie(rand(4, 2), layout = (1, 2))</code></pre> <img src="/assets/recipes/code/output/plotpie.svg" alt="">
+<p>The series recipe syntax is just a little nicer in this case. Here&#39;s subtle difference between these recipe types: Plot recipes are applied in any case while series are only applied if the backend does not support the series type natively.</p>
+<p>Let&#39;s try it the other way around and implement our <code>yscaleplot</code> recipe as a series recipe.</p>
+<pre><code class="language-julia">@recipe function f(::Type{Val{:yscaleseries}}, x, y, z)
+    layout := (1, 2)
+    for (i, scale) in enumerate((:linear, :log))
+        @series begin
+            title --> string(scale, " scale")
+            seriestype := :path
+            subplot := i
+            yscale := scale
+        end
+    end
+end
+@shorthands yscaleseries</code></pre>
+<p>Huh, that looks nicer than the plot recipe version as well. Let&#39;s try to plot.</p>
+<pre><code class="language-julia">yscaleseries((1:10).^2)</code></pre> <pre><code class="language-julia">MethodError: Cannot `convert` an object of type Int64 to an object of type Plots.Subplot{Plots.GRBackend}
+Closest candidates are:
+  convert(::Type{T}, !Matched::T) where T at essentials.jl:168
+  Plots.Subplot{Plots.GRBackend}(::Any, !Matched::Any, !Matched::Any, !Matched::Any, !Matched::Any, !Matched::Any, !Matched::Any, !Matched::Any) where T<:RecipesBase.AbstractBackend at /home/daniel/.julia/packages/Plots/rNwM4/src/types.jl:88</code></pre>
+<p>That is because the plot and subplots have already been built before the series recipe is applied. So, for everything that modifies plot-wide attributes we should stick to plot recipes, otherwise I recommend series recipes.</p>
+<h2 id="internals"><a href="#internals">Internals</a></h2>
+<p>That was fun - a lot of colorful plots&#33; But now let&#39;s dig into the source code to understand what&#39;s actually going on under the hood.</p>
+<h3 id="recipesbase__2"><a href="#recipesbase__2">RecipesBase</a></h3>
+<p>The <code>@recipe</code> macro defines a new method for <code>RecipesBase.apply_recipe</code>. <pre><code class="language-julia">@recipe function f(args...; kwargs...)</code></pre> defines <code>Vector&#123;RecipeData&#125;</code> where</p>
+<pre><code class="language-julia">RecipesBase.apply_recipe(plotattributes, args...; kwargs...)</code></pre> returning a <code>Vector&#123;RecipeData&#125;</code> where <code>RecipeData</code> holds the <code>plotattributes</code> Dict and the arguments returned in <code>@recipe</code> or in <code>@series</code>. <pre><code class="language-julia">struct RecipeData
+    plotattributes::AbstractDict{Symbol,Any}
+    args::Tuple
+end</code></pre> This function sets and overwrites entries in <code>plotattributes</code> and possibly adds new series.</p>
+<ul>
+<li><p><code>attr --&gt; val</code> translates to <code>haskey&#40;plotattributes, :attr&#41; || plotattributes&#91;:attr&#93; &#61; val</code></p>
+</li>
+<li><p><code>attr :&#61; val</code> sets <code>plotattributes&#91;:attr&#93; &#61; val</code>.</p>
+</li>
+<li><p><code>@series</code> allows to add new series within <code>@recipe</code>. It copies <code>plotattributes</code> from <code>@recipe</code>, applies the replacements in defined in its code block and returns corresponding new <code>RecipeData</code> object.</p>
+</li>
+</ul>
+<p>So <code>RecipesBase.apply_recipe&#40;plotattributes, args...; kwargs...&#41;</code> returns a <code>Vector&#123;RecipeData&#125;</code>. Plots can then recursively apply it again on the <code>plotattributes</code> and <code>args</code> of the elements of this vector, dispatching on a different signature.</p>
+<h3 id="plots__2"><a href="#plots__2">Plots</a></h3>
+<p>The standard plotting commands <pre><code class="language-julia">plot(args...; plotattributes...)
+plot!(args...; plotattributes...)</code></pre> and shorthands like <code>scatter</code> or <code>bar</code> call the core plotting function <pre><code class="language-julia">Plots._plot!(plt::Plot, plotattributes::AbstractDict{Symbol, Any}, args::Tuple)</code></pre> in <a href="https://github.com/JuliaPlots/Plots.jl/blob/master/src/plot.jl"><code>src/plot.jl</code></a>.</p>
+<p>In the following we will go through the major steps of the preprocessing pipeline implemented in <code>Plots._plot&#33;</code>.</p>
+<h4 id="preprocess_plotattributes"><a href="#preprocess_plotattributes">Preprocess <code>plotattributes</code></a></h4>  Before <code>Plots._plot&#33;</code> is called and after each recipe is applied, <code>preprocessArgs&#33;</code> in <a href="https://github.com/JuliaPlots/Plots.jl/blob/master/src/args.jl"><code>src/args.jl</code></a> preprocesses the <code>plotattributes</code> Dict. It replaces aliases, expands magic arguments, and converts some attribute types.</p>
+<ul>
+<li><p><code>lc &#61; nothing</code> is replaced by <code>linecolor &#61; RGBA&#40;0, 0, 0, 0&#41;</code>.</p>
+</li>
+<li><p><code>marker &#61; &#40;:red, :circle, 8&#41;</code> expands to <code>markercolor &#61; :red</code>, <code>markershape &#61; :circle</code> and <code>markersize &#61; 8</code>.</p>
+</li>
+</ul>
+<h4 id="process_user_recipes"><a href="#process_user_recipes">Process User Recipes</a></h4>
+<p>In the first step, <code>_process_userrecipe</code> in <a href="https://github.com/JuliaPlots/Plots.jl/blob/master/src/pipeline.jl"><code>src/pipeline.jl</code></a> is called.</p>
+<pre><code class="language-julia">kw_list = _process_userrecipes(plt, plotattributes, args)</code></pre>
+<code>_process_userrecipe</code> roughly looks like this:</p>
+<pre><code class="language-julia">still_to_process = RecipeData[]
+args = _preprocess_args(plotattributes, args, still_to_process)
+kw_list = Dict{Symbol, Any}[]
+
+while !isempty(still_to_process)
+    next_series = popfirst!(still_to_process)
+    if isempty(next_series.args)
+        # finish up and add to kw_list
+    else
+        rd_list = RecipesBase.apply_recipe(next_series.plotattributes, next_series.args...)
+        prepend!(still_to_process,rd_list)
+    end
+end</code></pre>
+<p>It recursively applies <code>RecipesBase.apply_recipe</code> on the fields of the first element of the <code>RecipeData</code> vector <code>still_to_process</code> and prepends the resulting <code>RecipeData</code> vector to it. If the <code>args</code> of an element are empty, it finishes up and adds <code>plotattributes</code> to <code>kw_list</code>. When all <code>RecipeData</code> elements are fully processed the <code>kw_list</code> is returned.</p>
+<h4 id="process_type_recipes"><a href="#process_type_recipes">Process Type Recipes</a></h4>
+<p>After user recipes are processed, at some point in the recursion above args is of the form <code>&#40;y, &#41;</code>, <code>&#40;x, y&#41;</code> or <code>&#40;x, y, z&#41;</code>. In <a href="https://github.com/JuliaPlots/Plots.jl/blob/master/src/pipeline.jl"><code>src/series.jl</code></a> recipes for these signatures are defined. The two argument version, for example, looks like this.</p>
+<pre><code class="language-julia">@recipe function f(x, y)
+    did_replace = false
+    newx = _apply_type_recipe(plotattributes, x)
+    x === newx || (did_replace = true)
+    newy = _apply_type_recipe(plotattributes, y)
+    y === newy || (did_replace = true)
+    if did_replace
+        newx, newy
+    else
+        SliceIt, x, y, nothing
+    end
+end</code></pre>
+<p>It recursively calls <code>_apply_type_recipe</code> on each argument until none of the arguments is replaced. It applies the type recipe with the corresponding signature and for vectors it tries to apply the recipe element-wise.</p>
+<pre><code class="language-julia">_apply_type_recipe(plotattributes, v) = RecipesBase.apply_recipe(plotattributes, typeof(v), v)[1].args[1]
+
+# Handle type recipes when the recipe is defined on the elements.
+# This sort of recipe should return a pair of functions... one to convert to number,
+# and one to format tick values.
+function _apply_type_recipe(plotattributes, v::AbstractArray)
+    isempty(skipmissing(v)) && return Float64[]
+    x = first(skipmissing(v))
+    args = RecipesBase.apply_recipe(plotattributes, typeof(x), x)[1].args
+    if length(args) == 2 && typeof(args[1]) <: Function && typeof(args[2]) <: Function
+        numfunc, formatter = args
+        Formatted(map(numfunc, v), formatter)
+    else
+        v
+    end
+end
+
+# don't do anything for ints or floats
+_apply_type_recipe(plotattributes, v::AbstractArray{T}) where {T<:Union{Integer,AbstractFloat}} = v</code></pre>
+<p>When no argument is changed by <code>_apply_type_recipe</code>, the fallback <code>SliceIt</code> recipe is applied, which adds the data to <code>plotattributes</code> and returns <code>RecipeData</code> with empty args.</p>
+<h4 id="process_plot_recipes"><a href="#process_plot_recipes">Process Plot Recipes</a></h4>
+<p>At this stage all arguments have been processed to something Plots supports. In <code>_plot&#33;</code> we have a <code>Vector&#123;Dict&#125;</code> <code>kw_list</code> with an entry for each series and already populated <code>:x</code>, <code>:y</code> and <code>:z</code> keys. Now <code>_process_plotrecipe</code> in <a href="https://github.com/JuliaPlots/Plots.jl/blob/master/src/pipeline.jl"><code>src/pipeline.jl</code></a> is called until all plot recipes are processed.</p>
+<pre><code class="language-julia">still_to_process = kw_list
+kw_list = KW[]
+while !isempty(still_to_process)
+    next_kw = popfirst!(still_to_process)
+    _process_plotrecipe(plt, next_kw, kw_list, still_to_process)
+end</code></pre>
+<p>If no series type is set in the Dict, <code>_process_plotrecipe</code> pushes it to <code>kw_list</code> and returns. Otherwise it tries to call <code>RecipesBase.apply_recipe</code> with the plot recipe signature. If there is a method for this signature and the seriestype has changed by applying the recipe, the new <code>plotattributes</code> are append to <code>still_to_process</code>. If there is no method for the current plot recipe signature, we append the current Dict to <code>kw_list</code> and rely on series recipe processing.</p>
+<pre><code class="language-julia">function _process_plotrecipe(plt::Plot, kw::AKW, kw_list::Vector{KW}, still_to_process::Vector{KW})
+    if !isa(get(kw, :seriestype, nothing), Symbol)
+        # seriestype was never set, or it's not a Symbol, so it can't be a plot recipe
+        push!(kw_list, kw)
+        return
+    end
+    try
+        st = kw[:seriestype]
+        st = kw[:seriestype] = get(_typeAliases, st, st)
+        datalist = RecipesBase.apply_recipe(kw, Val{st}, plt)
+        for data in datalist
+            preprocessArgs!(data.plotattributes)
+            if data.plotattributes[:seriestype] == st
+                error("Plot recipe $st returned the same seriestype: $(data.plotattributes)")
+            end
+            push!(still_to_process, data.plotattributes)
+        end
+    catch err
+        if isa(err, MethodError)
+            push!(kw_list, kw)
+        else
+            rethrow()
+        end
+    end
+    return
+end</code></pre>
+<p>After all plot recipes have been applied, the plot and subplots are set-up.</p>
+<pre><code class="language-julia">_plot_setup(plt, plotattributes, kw_list)
+_subplot_setup(plt, plotattributes, kw_list)</code></pre>
+<h4 id="process_series_recipes"><a href="#process_series_recipes">Process Series Recipes</a></h4>
+<p>We are almost finished. Now the series defaults are populated and <code>_process_seriesrecipe</code> in <a href="https://github.com/JuliaPlots/Plots.jl/blob/master/src/pipeline.jl"><code>src/pipeline.jl</code></a> is called for each series .</p>
+<pre><code class="language-julia">for kw in kw_list
+    # merge defaults
+    series_attr = Attr(kw, _series_defaults)
+    _process_seriesrecipe(plt, series_attr)
+end</code></pre>
+<p>If the series type is natively supported by the backend, we finalize processing and pass the series along to the backend. Otherwise, the series recipe for the current series type is applied and <code>_process_seriesrecipe</code> is called again for the <code>plotattributes</code> in each returned <code>RecipeData</code> object. Here we have to check again that the series type changed to not run into a <code>StackOverflow</code> error.</p>
+<pre><code class="language-julia">function _process_seriesrecipe(plt, plotattributes)
+    st = plotattributes[:seriestype]
+    if is_seriestype_supported(st)
+        # if it's natively supported, finalize processing and pass along to the backend, otherwise recurse
+    else
+        # get a sub list of series for this seriestype
+        datalist = RecipesBase.apply_recipe(
+            plotattributes, Val{st}, plotattributes[:x], plotattributes[:y], plotattributes[:z]
+        )
+
+        # assuming there was no error, recursively apply the series recipes
+        for data in datalist
+            preprocessArgs!(data.plotattributes)
+            if data.plotattributes[:seriestype] == st
+                error("The seriestype didn't change in series recipe $st.  This will cause a StackOverflow.")
+            end
+            _process_seriesrecipe(plt, data.plotattributes)
+        end
+    end
+end</code></pre>
+<p>Due to this recursive processing, complex series types can be built up by simple blocks. For example if we add an <code>@show st</code> in <code>_process_seriesrecipe</code> and plot a histogram, we go through the following series types:</p>
+<pre><code class="language-julia">plot(histogram(randn(1000)))</code></pre> <pre><code class="language-julia">st = :histogram
+st = :barhist
+st = :barbins
+st = :bar
+st = :shape</code></pre> <img src="/assets/recipes/code/output/histogram.svg" alt="">
+<h2 id="concluding_remarks"><a href="#concluding_remarks">Concluding Remarks</a></h2>
+<p>Recipes provide a nice composable system in the spirit of Julia&#39;s multiple dispatch design for defining visualizations for custom types without taking a dependency on a Plotting package. However, the system is tightly intertwined with the Plots processing pipeline and relies on the recursive application of recipes on plot attributes passed through as a <code>Dict&#123;Symbol, Any&#125;</code>. Furthermore, there are different types of recipes called at different stages during the Plots processing pipeline. In addition, there are some basic recipes defined in Plots, like the default slicer <code>SliceIt</code>, that are essential for the recursive application of recipes to work as expected.</p>
+<p>For recipes to interact properly with other plotting packages &#40;like <a href="https://github.com/JuliaPlots/Makie.jl">Makie.jl</a>&#41; these packages probably have to port the processing pipeline and fallback recipes in some form. Another option could be to move parts of the fundamental processing pipeline, like <code>_process_userrecipe</code>, <code>_process_plotrecipe</code>, <code>_process_seriesrecipe</code> and <code>_apply_type_recipe</code>,  and fallback recipes to RecipesBase and let other plotting packages use these. I am not sure if this is feasible and if other packages have to support key Plots design principles &#40;like columns are series&#41; for this to work. In any case, I am afraid porting the Plots recipe system to other plotting packages will not be a trivial task. However, I am really looking forward to hear ideas of others during our remote VizCon meetings.</p>
+<h2 id="acknowledgements"><a href="#acknowledgements">Acknowledgements</a></h2>
+<p>The recipe system and the processing pipeline was designed by Tom Breloff &#40;<a href="https://github.com/tbreloff">@tbreloff</a>&#41;. You can find a video of him explaining the Plots Ecosystem and the Recipe System at <a href="http://www.breloff.com/plots-video/">http://www.breloff.com/plots-video/</a>.
+<div class="page-foot">
+  <div class="copyright">
+    &copy; Daniel Schwabeneder. Last modified: March 13, 2020. Website built with <a href="https://github.com/tlienart/Franklin.jl">Franklin.jl</a>.
+  </div>
+</div>
+
+</div>
+<!-- CONTENT ENDS HERE -->
+    </div>  <!-- div: content container -->
+    
+        <script src="/libs/katex/katex.min.js"></script>
+<script src="/libs/katex/auto-render.min.js"></script>
+<script>renderMathInElement(document.body)</script>
+
+    
+    
+        <script src="/libs/highlight/highlight.pack.js"></script>
+<script>hljs.initHighlightingOnLoad();hljs.configure({tabReplace: '    '});</script>
+
+    
+  </body>
+</html>
